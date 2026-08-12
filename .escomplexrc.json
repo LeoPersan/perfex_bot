@@ -1,0 +1,36 @@
+{
+  "settings": {
+    "logicalor": true,
+    "switchcase": true,
+    "forin": true,
+    "trycatch": true,
+    "newmi": true,
+    "commonjs": true,
+    "esmImportExport": {
+      "halstead": false,
+      "lloc": false
+    }
+  },
+  "thresholds": {
+    "cyclomatic": {
+      "warning": 10,
+      "error": 15
+    },
+    "maintainability": {
+      "warning": 65,
+      "error": 50
+    },
+    "paramCount": {
+      "warning": 5,
+      "error": 6
+    },
+    "slocLogical": {
+      "warning": 40,
+      "error": 80
+    },
+    "halsteadEffort": {
+      "warning": 30000,
+      "error": 60000
+    }
+  }
+}
