@@ -1,12 +1,14 @@
 import { Collection } from 'discord.js';
 import { Command, ExtendedClient } from '../types/index.js';
 import { oiCommand } from '../commands/oi.js';
+import { pergunteCommand } from '../commands/pergunte.js';
 
 export function loadCommands(client: ExtendedClient): void {
   client.commands = new Collection<string, Command>();
 
   const commandsList: Command[] = [
     oiCommand,
+    pergunteCommand,
   ];
 
   for (const command of commandsList) {

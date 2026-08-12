@@ -1,11 +1,11 @@
 ---
 name: discord-bot-bootstrap
-description: Scaffold and maintain modular Discord bots using Node.js, TypeScript, Slash Commands, Docker Compose hot-reload, and native Node.js tests.
+description: Scaffold and maintain modular Discord bots using Node.js, TypeScript, Slash Commands, Docker Compose hot-reload, OpenRouter AI integration, and native Node.js tests.
 ---
 
 # Discord Bot Bootstrap Skill
 
-Use esta skill para criar ou expandir bots do Discord com arquitetura modular em Node.js e TypeScript, suporte a Docker Compose com hot-reload e testes automatizados.
+Use esta skill para criar ou expandir bots do Discord com arquitetura modular em Node.js e TypeScript, integração com IA via OpenRouter, suporte a Docker Compose com hot-reload e testes automatizados.
 
 ## Estrutura do Projeto
 
@@ -22,8 +22,11 @@ Use esta skill para criar ou expandir bots do Discord com arquitetura modular em
 │   │   └── env.ts            # Carregamento defensivo de ambiente com dotenv override
 │   ├── types/
 │   │   └── index.ts          # Interfaces de Command, Event e ExtendedClient
-│   ├── commands/             # Módulos de Slash Commands (ex: oi.ts)
-│   │   └── oi.ts
+│   ├── services/             # Serviços externos e integrações (ex: openrouter.ts)
+│   │   └── openrouter.ts
+│   ├── commands/             # Módulos de Slash Commands (ex: oi.ts, pergunte.ts)
+│   │   ├── oi.ts
+│   │   └── pergunte.ts
 │   ├── events/               # Listeners de eventos da discord.js (ready, interactionCreate)
 │   │   ├── ready.ts
 │   │   └── interactionCreate.ts
@@ -35,9 +38,12 @@ Use esta skill para criar ou expandir bots do Discord com arquitetura modular em
 │   └── index.ts              # Entrypoint da aplicação
 └── tests/                    # Suíte de testes com runner nativo (node:test)
     ├── commands/
-    │   └── oi.test.ts
-    └── events/
-        └── interactionCreate.test.ts
+    │   ├── oi.test.ts
+    │   └── pergunte.test.ts
+    ├── events/
+    │   └── interactionCreate.test.ts
+    └── services/
+        └── openrouter.test.ts
 ```
 
 ---
@@ -46,7 +52,7 @@ Use esta skill para criar ou expandir bots do Discord com arquitetura modular em
 
 ### 1. Definição de Comando (`src/commands/<name>.ts`)
 ```typescript
-import { SlashCommandBuilder, ChatInputCommandInteraction } from 'discord.js';
+import { SlashCommandBuilder, ChatInputCommandInteraction, AttachmentBuilder } from 'discord.js';
 import { Command } from '../types/index.js';
 
 export const exampleCommand: Command = {
@@ -61,7 +67,30 @@ export const exampleCommand: Command = {
 export default exampleCommand;
 ```
 
-### 2. Definição de Evento (`src/events/<name>.ts`)
+> **Nota para comandos assíncronos/demorados (como chamadas de IA)**:
+> Use `await interaction.deferReply();` no início e `await interaction.editReply(...)` ao finalizar para evitar timeout no Discord. Se o texto exceder 2000 caracteres, envie via `AttachmentBuilder` como um anexo `.txt`.
+
+### 2. Definição de Serviço de IA / Integrações (`src/services/<service>.ts`)
+```typescript
+import OpenAI from 'openai';
+import { config } from '../config/env.js';
+
+export async function askOpenRouter(prompt: string): Promise<string> {
+  const client = new OpenAI({
+    baseURL: 'https://openrouter.ai/api/v1',
+    apiKey: config.openRouterApiKey,
+  });
+
+  const response = await client.chat.completions.create({
+    model: config.openRouterModel,
+    messages: [{ role: 'user', content: prompt }],
+  });
+
+  return response.choices[0]?.message?.content || '';
+}
+```
+
+### 3. Definição de Evento (`src/events/<name>.ts`)
 ```typescript
 import { Events, Interaction } from 'discord.js';
 import { Event } from '../types/index.js';
@@ -76,7 +105,7 @@ export const exampleEvent: Event = {
 export default exampleEvent;
 ```
 
-### 3. Testes Automatizados Nativos (`tests/**/*.test.ts`)
+### 4. Testes Automatizados Nativos (`tests/**/*.test.ts`)
 ```typescript
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -97,5 +126,7 @@ describe('Nome da Suite', () => {
 - **Rodar testes**: `npm test` (`tsx --test tests/**/*.test.ts`)
 - **Compilação TypeScript**: `npm run build` (`tsc`)
 - **Deploy de Slash Commands**: `npm run deploy` (`tsx src/scripts/deploy-commands.ts`)
-- **Iniciar via Docker**: `docker compose up --build`
+- **Iniciar via Docker**: `docker compose up --build -d`
+- **Resetar volumes Docker (reinstalar node_modules)**: `docker compose down -v && docker compose up --build -d`
 - **Deploy de comandos via Docker**: `docker compose exec bot npm run deploy`
+

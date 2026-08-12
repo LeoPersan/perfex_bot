@@ -1,6 +1,7 @@
 import { REST, Routes } from 'discord.js';
 import { config, validateEnv } from '../config/env.js';
 import { oiCommand } from '../commands/oi.js';
+import { pergunteCommand } from '../commands/pergunte.js';
 
 validateEnv();
 
@@ -9,7 +10,10 @@ if (!config.token || !config.clientId) {
   process.exit(1);
 }
 
-const commandsData = [oiCommand.data.toJSON()];
+const commandsData = [
+  oiCommand.data.toJSON(),
+  pergunteCommand.data.toJSON(),
+];
 const rest = new REST().setToken(config.token);
 
 (async () => {
