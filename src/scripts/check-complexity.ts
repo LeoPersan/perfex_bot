@@ -176,7 +176,7 @@ export function findTsFiles(dir: string): string[] {
   const list = fs.readdirSync(dir);
 
   for (const file of list) {
-    if (file === 'node_modules' || file === 'dist' || file === '.git') {
+    if (file === 'node_modules' || file === 'dist' || file === '.git' || file.startsWith('.')) {
       continue;
     }
     const fullPath = path.join(dir, file);

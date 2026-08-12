@@ -6,7 +6,7 @@ export const config = {
   get clientId() { return process.env.CLIENT_ID || ''; },
   get guildId() { return process.env.GUILD_ID || ''; },
   get openRouterApiKey() { return process.env.OPENROUTER_API_KEY || ''; },
-  get openRouterModel() { return process.env.OPENROUTER_MODEL || 'google/gemma-4-31b-it:free'; },
+  get openRouterModel() { return process.env.OPENROUTER_MODEL || 'nvidia/nemotron-3-ultra-550b-a55b:free'; },
 };
 
 export function validateEnv(): void {
