@@ -1,6 +1,15 @@
 import { test, describe, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { askOpenRouter, getSmartestFreeModel, clearModelCache } from '../../src/services/openrouter.js';
+import {
+  askOpenRouter,
+  getSmartestFreeModel,
+  getFastestFreeModel,
+  getModelSelector,
+  selectFreeModel,
+  clearModelCache,
+  SmartestModelSelector,
+  FastestModelSelector,
+} from '../../src/services/openrouter.js';
 
 describe('Serviço OpenRouter', () => {
   beforeEach(() => {
@@ -95,6 +104,32 @@ describe('Serviço OpenRouter', () => {
     assert.equal(selectedModel, 'model-b:free');
   });
 
+  test('deve escolher o modelo gratuito mais rápido solicitando sort=throughput-high-to-low', async () => {
+    let requestedUrl = '';
+    const mockFetch = async (url: string) => {
+      requestedUrl = url;
+      return {
+        ok: true,
+        json: async () => ({
+          data: [
+            {
+              id: 'fastest-model:free',
+              pricing: { prompt: '0', completion: '0' },
+            },
+            {
+              id: 'slower-model:free',
+              pricing: { prompt: '0', completion: '0' },
+            },
+          ],
+        }),
+      };
+    };
+
+    const selectedModel = await getFastestFreeModel(mockFetch as any);
+    assert.equal(selectedModel, 'fastest-model:free');
+    assert.ok(requestedUrl.includes('sort=throughput-high-to-low'));
+  });
+
   test('deve filtrar modelos com suporte a ferramentas quando requireToolCalling for true', async () => {
     const mockFetch = async () => ({
       ok: true,
@@ -128,6 +163,10 @@ describe('Serviço OpenRouter', () => {
     const selectedModel = await getSmartestFreeModel(mockFailingFetch as any);
     assert.ok(typeof selectedModel === 'string');
     assert.ok(selectedModel.length > 0);
+
+    const fastestFallback = await getFastestFreeModel(mockFailingFetch as any);
+    assert.ok(typeof fastestFallback === 'string');
+    assert.ok(fastestFallback.length > 0);
   });
 
   test('deve utilizar o cache para chamadas subsequentes dentro do TTL', async () => {
@@ -154,5 +193,83 @@ describe('Serviço OpenRouter', () => {
     assert.equal(model1, 'smart-model:free');
     assert.equal(model2, 'smart-model:free');
     assert.equal(callCount, 1);
+  });
+
+  test('deve instanciar o seletor correto através de getModelSelector e classes de estratégia', async () => {
+    const smartestSelector = getModelSelector('smartest');
+    assert.ok(smartestSelector instanceof SmartestModelSelector);
+
+    const fastestSelector = getModelSelector('fastest');
+    assert.ok(fastestSelector instanceof FastestModelSelector);
+  });
+
+  test('deve alternar a seleção via variável de ambiente MODEL_SELECTION_STRATEGY', async () => {
+    const originalEnv = process.env.MODEL_SELECTION_STRATEGY;
+
+    const mockFetch = async (url: string) => {
+      const isFastestReq = url.includes('sort=throughput-high-to-low');
+      return {
+        ok: true,
+        json: async () => ({
+          data: [
+            {
+              id: isFastestReq ? 'fast-choice:free' : 'smart-choice:free',
+              pricing: { prompt: '0', completion: '0' },
+              benchmarks: { artificial_analysis: { intelligence_index: 100 } },
+            },
+          ],
+        }),
+      };
+    };
+
+    try {
+      process.env.MODEL_SELECTION_STRATEGY = 'smartest';
+      clearModelCache();
+      const smartModel = await selectFreeModel(undefined, mockFetch as any);
+      assert.equal(smartModel, 'smart-choice:free');
+
+      process.env.MODEL_SELECTION_STRATEGY = 'fastest';
+      clearModelCache();
+      const fastModel = await selectFreeModel(undefined, mockFetch as any);
+      assert.equal(fastModel, 'fast-choice:free');
+    } finally {
+      process.env.MODEL_SELECTION_STRATEGY = originalEnv;
+      clearModelCache();
+    }
+  });
+
+  test('deve emitir logs informando os modelos retornados pelo OpenRouter', async () => {
+    const logs: string[] = [];
+    const originalLog = console.log;
+    console.log = (...args: any[]) => {
+      logs.push(args.map((a) => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' '));
+    };
+
+    const mockFetch = async () => ({
+      ok: true,
+      json: async () => ({
+        data: [
+          {
+            id: 'alpha-model:free',
+            pricing: { prompt: '0', completion: '0' },
+            benchmarks: { artificial_analysis: { intelligence_index: 80 } },
+          },
+          {
+            id: 'beta-model:free',
+            pricing: { prompt: '0', completion: '0' },
+            benchmarks: { artificial_analysis: { intelligence_index: 50 } },
+          },
+        ],
+      }),
+    });
+
+    try {
+      const selected = await getSmartestFreeModel(mockFetch as any);
+      assert.equal(selected, 'alpha-model:free');
+      assert.ok(logs.some((l) => l.includes('[OPENROUTER]') && l.includes('Modelos recebidos do OpenRouter')));
+      assert.ok(logs.some((l) => l.includes('[OPENROUTER]') && l.includes('alpha-model:free')));
+    } finally {
+      console.log = originalLog;
+    }
   });
 });

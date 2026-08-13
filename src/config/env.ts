@@ -1,12 +1,18 @@
 import dotenv from 'dotenv';
 dotenv.config({ override: true });
 
+export type ModelSelectionStrategy = 'smartest' | 'fastest';
+
 export const config = {
   get token() { return process.env.DISCORD_TOKEN || ''; },
   get clientId() { return process.env.CLIENT_ID || ''; },
   get guildId() { return process.env.GUILD_ID || ''; },
   get openRouterApiKey() { return process.env.OPENROUTER_API_KEY || ''; },
   get openRouterModel() { return process.env.OPENROUTER_MODEL || 'nvidia/nemotron-3-ultra-550b-a55b:free'; },
+  get modelSelectionStrategy(): ModelSelectionStrategy {
+    const val = (process.env.MODEL_SELECTION_STRATEGY || '').toLowerCase();
+    return val === 'fastest' ? 'fastest' : 'smartest';
+  },
   get perfexBaseUrl() { return process.env.PERFEX_BASE_URL || ''; },
   get perfexCsrfCookie() { return process.env.PERFEX_CSRF_COOKIE || ''; },
   get perfexSessionCookie() { return process.env.PERFEX_SESSION_COOKIE || ''; },

@@ -2,7 +2,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import OpenAI from 'openai';
 import { config } from '../config/env.js';
-import { getSmartestFreeModel } from './openrouter.js';
+import { selectFreeModel } from './openrouter.js';
 
 export interface McpAgentOptions {
   modelOverride?: string;
@@ -160,7 +160,7 @@ export async function askOpenRouterWithMcp(
     const { tools: mcpTools } = await mcpClient.listTools();
     const openAITools = mapMcpToolsToOpenAI(mcpTools);
     const openai = getOpenAIClient(apiKey, options?.openaiClient);
-    const model = options?.modelOverride || (await getSmartestFreeModel(options?.customFetch, true));
+    const model = options?.modelOverride || (await selectFreeModel(undefined, options?.customFetch, true));
     const messages: OpenAI.ChatCompletionMessageParam[] = [{ role: 'user', content: userPrompt }];
 
     return await runAgentLoop({
