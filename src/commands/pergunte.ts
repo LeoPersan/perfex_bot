@@ -1,6 +1,6 @@
 import { SlashCommandBuilder, ChatInputCommandInteraction, AttachmentBuilder } from 'discord.js';
 import { Command } from '../types/index.js';
-import { askOpenRouter } from '../services/openrouter.js';
+import { askOpenRouterWithMcp } from '../services/mcpAgent.js';
 
 export const pergunteCommand: Command & {
   execute: (
@@ -19,7 +19,7 @@ export const pergunteCommand: Command & {
     ),
   async execute(
     interaction: ChatInputCommandInteraction,
-    askFn: (prompt: string) => Promise<string> = askOpenRouter
+    askFn: (prompt: string) => Promise<string> = askOpenRouterWithMcp
   ): Promise<void> {
     await interaction.deferReply();
     const prompt = interaction.options.getString('pergunta', true);

@@ -95,6 +95,31 @@ describe('Serviço OpenRouter', () => {
     assert.equal(selectedModel, 'model-b:free');
   });
 
+  test('deve filtrar modelos com suporte a ferramentas quando requireToolCalling for true', async () => {
+    const mockFetch = async () => ({
+      ok: true,
+      json: async () => ({
+        data: [
+          {
+            id: 'model-without-tools:free',
+            pricing: { prompt: '0', completion: '0' },
+            supported_parameters: ['temperature'],
+            benchmarks: { artificial_analysis: { intelligence_index: 99 } },
+          },
+          {
+            id: 'model-with-tools:free',
+            pricing: { prompt: '0', completion: '0' },
+            supported_parameters: ['temperature', 'tools', 'tool_choice'],
+            benchmarks: { artificial_analysis: { intelligence_index: 50 } },
+          },
+        ],
+      }),
+    });
+
+    const selectedModel = await getSmartestFreeModel(mockFetch as any, true);
+    assert.equal(selectedModel, 'model-with-tools:free');
+  });
+
   test('deve fazer fallback para o modelo configurado caso a API falhe', async () => {
     const mockFailingFetch = async () => {
       throw new Error('Falha de conexão');

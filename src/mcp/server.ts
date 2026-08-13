@@ -81,7 +81,7 @@ export async function runServer(): Promise<void> {
     await server.connect(transport);
 }
 
-if (process.argv[1] && process.argv[1].endsWith('server.ts')) {
+if (process.argv[1] && (process.argv[1].endsWith('server.ts') || process.argv[1].endsWith('server.js'))) {
     runServer().catch(err => {
         console.error('Erro no Servidor MCP:', err);
         process.exit(1);

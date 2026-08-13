@@ -7,6 +7,9 @@ export const config = {
   get guildId() { return process.env.GUILD_ID || ''; },
   get openRouterApiKey() { return process.env.OPENROUTER_API_KEY || ''; },
   get openRouterModel() { return process.env.OPENROUTER_MODEL || 'nvidia/nemotron-3-ultra-550b-a55b:free'; },
+  get perfexBaseUrl() { return process.env.PERFEX_BASE_URL || ''; },
+  get perfexCsrfCookie() { return process.env.PERFEX_CSRF_COOKIE || ''; },
+  get perfexSessionCookie() { return process.env.PERFEX_SESSION_COOKIE || ''; },
 };
 
 export function validateEnv(): void {

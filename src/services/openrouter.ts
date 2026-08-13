@@ -13,18 +13,26 @@ export interface OpenRouterModelInfo {
       intelligence_index?: number;
     };
   };
+  supported_parameters?: string[];
 }
 
-let cachedModel: { id: string; timestamp: number } | null = null;
+let cachedModel: { id: string; timestamp: number; requireToolCalling: boolean } | null = null;
 const CACHE_TTL_MS = 10 * 60 * 1000;
 
 export function clearModelCache(): void {
   cachedModel = null;
 }
 
-export async function getSmartestFreeModel(customFetch?: typeof fetch): Promise<string> {
+export async function getSmartestFreeModel(
+  customFetch?: typeof fetch,
+  requireToolCalling = false
+): Promise<string> {
   const fallbackModel = config.openRouterModel;
-  if (cachedModel && Date.now() - cachedModel.timestamp < CACHE_TTL_MS) {
+  if (
+    cachedModel &&
+    cachedModel.requireToolCalling === requireToolCalling &&
+    Date.now() - cachedModel.timestamp < CACHE_TTL_MS
+  ) {
     return cachedModel.id;
   }
 
@@ -41,9 +49,14 @@ export async function getSmartestFreeModel(customFetch?: typeof fetch): Promise<
     const data = (await response.json()) as { data?: OpenRouterModelInfo[] };
     const models = data.data || [];
 
-    const freeModels = models.filter(
-      (m) => m.pricing?.prompt === '0' && m.pricing?.completion === '0' && m.id !== 'openrouter/free'
-    );
+    const freeModels = models.filter((m) => {
+      const isFree = m.pricing?.prompt === '0' && m.pricing?.completion === '0' && m.id !== 'openrouter/free';
+      if (!isFree) return false;
+      if (requireToolCalling) {
+        return m.supported_parameters?.includes('tools') ?? false;
+      }
+      return true;
+    });
 
     if (freeModels.length === 0) {
       return fallbackModel;
@@ -59,7 +72,7 @@ export async function getSmartestFreeModel(customFetch?: typeof fetch): Promise<
     });
 
     const smartest = freeModels[0].id;
-    cachedModel = { id: smartest, timestamp: Date.now() };
+    cachedModel = { id: smartest, timestamp: Date.now(), requireToolCalling };
     return smartest;
   } catch {
     return fallbackModel;
@@ -97,7 +110,7 @@ export async function askOpenRouter(
         role: 'user',
         content: prompt,
       },
-    ],
+    ]
   });
 
   const content = response.choices?.[0]?.message?.content;
