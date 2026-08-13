@@ -45,9 +45,10 @@ describe('Comando Slash /pergunte', () => {
     assert.equal(editedReplyOptions.files, undefined);
   });
 
-  test('deve anexar arquivo resposta.txt quando a resposta for > 2000 caracteres', async () => {
+  test('deve dividir em múltiplas mensagens (editReply + followUp) quando a resposta for > 2000 caracteres', async () => {
     let deferred = false;
     let editedReplyOptions: any = null;
+    const followUps: any[] = [];
 
     const mockInteraction = {
       deferReply: async () => {
@@ -62,19 +63,24 @@ describe('Comando Slash /pergunte', () => {
       editReply: async (options: any) => {
         editedReplyOptions = options;
       },
+      followUp: async (options: any) => {
+        followUps.push(options);
+      },
     } as unknown as ChatInputCommandInteraction;
 
-    const longText = 'A'.repeat(2500);
+    const paragraph1 = 'Parágrafo 1: ' + 'A'.repeat(1200);
+    const paragraph2 = 'Parágrafo 2: ' + 'B'.repeat(1000);
+    const longText = `${paragraph1}\n\n${paragraph2}`;
     const mockAskOpenRouter = async () => longText;
 
     await pergunteCommand.execute(mockInteraction, mockAskOpenRouter);
 
     assert.equal(deferred, true);
     assert.ok(editedReplyOptions);
-    assert.match(editedReplyOptions.content, /excedeu 2000 caracteres/);
-    assert.ok(Array.isArray(editedReplyOptions.files));
-    assert.equal(editedReplyOptions.files.length, 1);
-    assert.equal(editedReplyOptions.files[0].name, 'resposta.txt');
+    assert.equal(editedReplyOptions.content, paragraph1);
+    assert.equal(editedReplyOptions.files, undefined);
+    assert.equal(followUps.length, 1);
+    assert.equal(followUps[0].content, paragraph2);
   });
 
   test('deve tratar erros amigavelmente caso o OpenRouter falhe', async () => {

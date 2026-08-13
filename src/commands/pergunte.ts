@@ -1,6 +1,7 @@
-import { SlashCommandBuilder, ChatInputCommandInteraction, AttachmentBuilder } from 'discord.js';
+import { SlashCommandBuilder, ChatInputCommandInteraction } from 'discord.js';
 import { Command } from '../types/index.js';
 import { askOpenRouterWithMcp } from '../services/mcpAgent.js';
+import { splitMessage } from '../utils/splitMessage.js';
 
 export const pergunteCommand: Command & {
   execute: (
@@ -26,19 +27,18 @@ export const pergunteCommand: Command & {
 
     try {
       const responseText = await askFn(prompt);
+      const chunks = splitMessage(responseText);
 
-      if (responseText.length > 2000) {
-        const attachment = new AttachmentBuilder(Buffer.from(responseText, 'utf-8'), {
-          name: 'resposta.txt',
-        });
-        await interaction.editReply({
-          content: '📄 A resposta da IA excedeu 2000 caracteres e foi anexada abaixo:',
-          files: [attachment],
-        });
-      } else {
-        await interaction.editReply({
-          content: responseText,
-        });
+      for (let i = 0; i < chunks.length; i++) {
+        if (i === 0) {
+          await interaction.editReply({
+            content: chunks[i],
+          });
+        } else {
+          await interaction.followUp({
+            content: chunks[i],
+          });
+        }
       }
     } catch (error: any) {
       await interaction.editReply({
@@ -49,3 +49,4 @@ export const pergunteCommand: Command & {
 };
 
 export default pergunteCommand;
+
