@@ -10,6 +10,7 @@ export interface McpAgentOptions {
   mcpClient?: Client;
   openaiClient?: OpenAI;
   customFetch?: typeof fetch;
+  userId?: string;
 }
 
 import path from 'path';
@@ -73,13 +74,16 @@ function formatMcpContent(content: any): string {
 async function handleToolCalls(
   mcpClient: Client,
   toolCalls: any[],
-  messages: OpenAI.ChatCompletionMessageParam[]
+  messages: OpenAI.ChatCompletionMessageParam[],
+  userId?: string
 ): Promise<void> {
   for (const toolCall of toolCalls) {
     const fn = toolCall.function;
+    const rawArgs = parseToolArgs(fn?.arguments);
+    const argsWithUser = userId ? { ...rawArgs, _userId: userId } : rawArgs;
     const mcpResult = await mcpClient.callTool({
       name: fn?.name || '',
-      arguments: parseToolArgs(fn?.arguments),
+      arguments: argsWithUser,
     });
 
     messages.push({
@@ -121,10 +125,11 @@ interface AgentLoopContext {
   messages: OpenAI.ChatCompletionMessageParam[];
   openAITools: OpenAI.ChatCompletionTool[];
   maxIterations: number;
+  userId?: string;
 }
 
 async function runAgentLoop(ctx: AgentLoopContext): Promise<string> {
-  const { openai, mcpClient, model, messages, openAITools, maxIterations } = ctx;
+  const { openai, mcpClient, model, messages, openAITools, maxIterations, userId } = ctx;
   for (let i = 0; i < maxIterations; i++) {
     const response = await openai.chat.completions.create({
       model,
@@ -137,7 +142,7 @@ async function runAgentLoop(ctx: AgentLoopContext): Promise<string> {
 
     messages.push(choice.message);
     if (choice.message.tool_calls && choice.message.tool_calls.length > 0) {
-      await handleToolCalls(mcpClient, choice.message.tool_calls, messages);
+      await handleToolCalls(mcpClient, choice.message.tool_calls, messages, userId);
     } else {
       return choice.message.content || '';
     }
@@ -170,7 +175,9 @@ export async function askOpenRouterWithMcp(
       messages,
       openAITools,
       maxIterations: options?.maxIterations ?? 10,
+      userId: options?.userId,
     });
+
   } finally {
     if (shouldCloseClient && mcpClient) {
       try {

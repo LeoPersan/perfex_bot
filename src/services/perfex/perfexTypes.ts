@@ -1,5 +1,5 @@
 export interface PerfexAuthConfig {
-    baseUrl: string;
+    baseUrl?: string;
     csrfToken: string;
     sessionCookie: string;
 }

@@ -5,10 +5,27 @@ import {
     ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import { PerfexClient } from '../services/perfex/perfexClient.js';
+import { defaultCredentialStore, CredentialStore } from '../services/credentialStore.js';
 import { getPerfexTools } from './tools.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
+
+export function resolveClientForArgs(
+    defaultClient: PerfexClient,
+    args: any,
+    credentialStore: CredentialStore = defaultCredentialStore
+): PerfexClient {
+    const userId = args?._userId || args?.userId;
+    if (userId) {
+        const userAuth = credentialStore.getCredentials(String(userId));
+        if (!userAuth) {
+            throw new Error(`Credenciais do Perfex não encontradas para o seu usuário do Discord. Por favor, configure suas credenciais utilizando o comando /credenciais.`);
+        }
+        return new PerfexClient(userAuth);
+    }
+    return defaultClient;
+}
 
 async function handleToolCall(client: PerfexClient, name: string, args: any): Promise<any> {
     switch (name) {
@@ -46,8 +63,8 @@ async function handleToolCall(client: PerfexClient, name: string, args: any): Pr
     }
 }
 
-export function createPerfexMcpServer(perfexClient?: PerfexClient): Server {
-    const client = perfexClient || new PerfexClient();
+export function createPerfexMcpServer(perfexClient?: PerfexClient, credentialStore: CredentialStore = defaultCredentialStore): Server {
+    const defaultClient = perfexClient || new PerfexClient();
     const server = new Server(
         { name: 'perfex-mcp-server', version: '1.0.0' },
         { capabilities: { tools: {} } }
@@ -60,7 +77,8 @@ export function createPerfexMcpServer(perfexClient?: PerfexClient): Server {
     server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const { name, arguments: args } = request.params;
         try {
-            const resultData = await handleToolCall(client, name, args);
+            const activeClient = resolveClientForArgs(defaultClient, args, credentialStore);
+            const resultData = await handleToolCall(activeClient, name, args);
             return {
                 content: [{ type: 'text', text: JSON.stringify(resultData, null, 2) }]
             };
@@ -74,6 +92,7 @@ export function createPerfexMcpServer(perfexClient?: PerfexClient): Server {
 
     return server;
 }
+
 
 export async function runServer(): Promise<void> {
     const server = createPerfexMcpServer();

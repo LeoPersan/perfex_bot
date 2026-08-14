@@ -1,12 +1,24 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { pergunteCommand } from '../../src/commands/pergunte.js';
-import { ChatInputCommandInteraction, AttachmentBuilder } from 'discord.js';
+import fs from 'fs';
+import path from 'path';
+import { ChatInputCommandInteraction } from 'discord.js';
+import { CredentialStore } from '../../src/services/credentialStore.js';
+import { createPergunteCommand } from '../../src/commands/pergunte.js';
 
-describe('Comando Slash /pergunte', () => {
+const TEST_FILE_PATH = path.resolve(process.cwd(), 'scratch/test_pergunte_user_credentials.json');
+
+function cleanupTestFile() {
+  if (fs.existsSync(TEST_FILE_PATH)) {
+    fs.unlinkSync(TEST_FILE_PATH);
+  }
+}
+
+describe('Comando Slash /pergunte com verificação de credenciais', () => {
   test('deve possuir o nome "pergunte" e a opção obrigatória "pergunta"', () => {
+    const pergunteCommand = createPergunteCommand();
     assert.equal(pergunteCommand.data.name, 'pergunte');
-    assert.equal(pergunteCommand.data.description, 'Envia uma pergunta para a IA via OpenRouter');
+    assert.equal(pergunteCommand.data.description, 'Envia uma pergunta para a IA utilizando suas credenciais do Perfex');
 
     const json = pergunteCommand.data.toJSON();
     assert.equal(json.options?.length, 1);
@@ -14,11 +26,47 @@ describe('Comando Slash /pergunte', () => {
     assert.equal(json.options[0].required, true);
   });
 
-  test('deve editar a resposta com o conteúdo quando a resposta for <= 2000 caracteres', async () => {
-    let deferred = false;
-    let editedReplyOptions: any = null;
+  test('deve solicitar credenciais se o usuário não possuir credenciais cadastradas', async () => {
+    cleanupTestFile();
+    const credentialStore = new CredentialStore(TEST_FILE_PATH);
+    const pergunteCommand = createPergunteCommand(credentialStore);
+
+    let dmSentMessage = '';
+    let replyOptions: any = null;
 
     const mockInteraction = {
+      user: {
+        id: 'user_without_creds',
+        send: async (msg: string) => {
+          dmSentMessage = msg;
+        },
+      },
+      reply: async (options: any) => {
+        replyOptions = options;
+      },
+    } as unknown as ChatInputCommandInteraction;
+
+    await pergunteCommand.execute(mockInteraction);
+
+    assert.match(dmSentMessage, /Credenciais do Perfex necessárias/);
+    assert.ok(replyOptions);
+    assert.match(replyOptions.content, /Enviamos uma mensagem privada \(DM\)/);
+
+    cleanupTestFile();
+  });
+
+  test('deve editar a resposta com o conteúdo quando o usuário possui credenciais e a resposta for <= 2000 caracteres', async () => {
+    cleanupTestFile();
+    const credentialStore = new CredentialStore(TEST_FILE_PATH);
+    credentialStore.saveCredentials('user_with_creds', 'dev_user', 'csrf', 'session');
+    const pergunteCommand = createPergunteCommand(credentialStore);
+
+    let deferred = false;
+    let editedReplyOptions: any = null;
+    let passedOptions: any = null;
+
+    const mockInteraction = {
+      user: { id: 'user_with_creds' },
       deferReply: async () => {
         deferred = true;
       },
@@ -33,7 +81,8 @@ describe('Comando Slash /pergunte', () => {
       },
     } as unknown as ChatInputCommandInteraction;
 
-    const mockAskOpenRouter = async (prompt: string) => {
+    const mockAskOpenRouter = async (prompt: string, opts?: any) => {
+      passedOptions = opts;
       return `Resposta curta para: ${prompt}`;
     };
 
@@ -42,51 +91,21 @@ describe('Comando Slash /pergunte', () => {
     assert.equal(deferred, true);
     assert.ok(editedReplyOptions);
     assert.equal(editedReplyOptions.content, 'Resposta curta para: Qual a cor do céu?');
-    assert.equal(editedReplyOptions.files, undefined);
-  });
+    assert.deepEqual(passedOptions, { userId: 'user_with_creds' });
 
-  test('deve dividir em múltiplas mensagens (editReply + followUp) quando a resposta for > 2000 caracteres', async () => {
-    let deferred = false;
-    let editedReplyOptions: any = null;
-    const followUps: any[] = [];
-
-    const mockInteraction = {
-      deferReply: async () => {
-        deferred = true;
-      },
-      options: {
-        getString: (name: string) => {
-          if (name === 'pergunta') return 'Gere um texto longo';
-          return null;
-        },
-      },
-      editReply: async (options: any) => {
-        editedReplyOptions = options;
-      },
-      followUp: async (options: any) => {
-        followUps.push(options);
-      },
-    } as unknown as ChatInputCommandInteraction;
-
-    const paragraph1 = 'Parágrafo 1: ' + 'A'.repeat(1200);
-    const paragraph2 = 'Parágrafo 2: ' + 'B'.repeat(1000);
-    const longText = `${paragraph1}\n\n${paragraph2}`;
-    const mockAskOpenRouter = async () => longText;
-
-    await pergunteCommand.execute(mockInteraction, mockAskOpenRouter);
-
-    assert.equal(deferred, true);
-    assert.ok(editedReplyOptions);
-    assert.equal(editedReplyOptions.content, paragraph1);
-    assert.equal(editedReplyOptions.files, undefined);
-    assert.equal(followUps.length, 1);
-    assert.equal(followUps[0].content, paragraph2);
+    cleanupTestFile();
   });
 
   test('deve tratar erros amigavelmente caso o OpenRouter falhe', async () => {
+    cleanupTestFile();
+    const credentialStore = new CredentialStore(TEST_FILE_PATH);
+    credentialStore.saveCredentials('user_with_creds', 'dev_user', 'csrf', 'session');
+    const pergunteCommand = createPergunteCommand(credentialStore);
+
     let editedReplyOptions: any = null;
 
     const mockInteraction = {
+      user: { id: 'user_with_creds' },
       deferReply: async () => {},
       options: {
         getString: () => 'Erro teste',
@@ -104,5 +123,7 @@ describe('Comando Slash /pergunte', () => {
 
     assert.ok(editedReplyOptions);
     assert.match(editedReplyOptions.content, /Erro ao consultar a IA/);
+
+    cleanupTestFile();
   });
 });

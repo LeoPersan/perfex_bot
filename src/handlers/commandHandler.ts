@@ -2,6 +2,11 @@ import { Collection } from 'discord.js';
 import { Command, ExtendedClient } from '../types/index.js';
 import { oiCommand } from '../commands/oi.js';
 import { pergunteCommand } from '../commands/pergunte.js';
+import {
+  credenciaisCommand,
+  minhasCredenciaisCommand,
+  removerCredenciaisCommand,
+} from '../commands/credenciais.js';
 
 export function loadCommands(client: ExtendedClient): void {
   client.commands = new Collection<string, Command>();
@@ -9,6 +14,9 @@ export function loadCommands(client: ExtendedClient): void {
   const commandsList: Command[] = [
     oiCommand,
     pergunteCommand,
+    credenciaisCommand,
+    minhasCredenciaisCommand,
+    removerCredenciaisCommand,
   ];
 
   for (const command of commandsList) {

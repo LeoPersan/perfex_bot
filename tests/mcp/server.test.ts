@@ -1,8 +1,19 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createPerfexMcpServer } from '../../src/mcp/server.js';
+import fs from 'fs';
+import path from 'path';
+import { createPerfexMcpServer, resolveClientForArgs } from '../../src/mcp/server.js';
 import { PerfexClient } from '../../src/services/perfex/perfexClient.js';
+import { CredentialStore } from '../../src/services/credentialStore.js';
 import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+
+const TEST_FILE_PATH = path.resolve(process.cwd(), 'scratch/test_mcp_user_credentials.json');
+
+function cleanupTestFile() {
+  if (fs.existsSync(TEST_FILE_PATH)) {
+    fs.unlinkSync(TEST_FILE_PATH);
+  }
+}
 
 function createMockClient(): PerfexClient {
     const mockFetch = (async () => new Response(JSON.stringify({ aaData: [] }))) as typeof fetch;
@@ -11,7 +22,6 @@ function createMockClient(): PerfexClient {
 
 test('Perfex MCP Server registers 7 tools', async () => {
     const server = createPerfexMcpServer(createMockClient());
-    // Access the list tools handler directly from the internal server instance
     const handler = (server as any)._requestHandlers.get(ListToolsRequestSchema.shape.method.value);
     assert.ok(handler);
 
@@ -51,4 +61,27 @@ test('Perfex MCP Server call_tool invokes perfex_list_projects', async () => {
     const data = JSON.parse(res.content[0].text);
     assert.equal(data.length, 1);
     assert.equal(data[0].id, '1');
+});
+
+test('resolveClientForArgs resolves user-specific credentials or returns error if missing', () => {
+    cleanupTestFile();
+    const credentialStore = new CredentialStore(TEST_FILE_PATH);
+    const defaultClient = createMockClient();
+
+    // Case 1: No _userId -> returns default client
+    const c1 = resolveClientForArgs(defaultClient, {}, credentialStore);
+    assert.equal(c1, defaultClient);
+
+    // Case 2: _userId provided but user has no credentials -> throws error
+    assert.throws(() => {
+        resolveClientForArgs(defaultClient, { _userId: '999' }, credentialStore);
+    }, /Credenciais do Perfex não encontradas/);
+
+    // Case 3: _userId provided and credentials exist -> returns new client with user credentials
+    credentialStore.saveCredentials('999', 'user999', 'user_csrf', 'user_session');
+    const c3 = resolveClientForArgs(defaultClient, { _userId: '999' }, credentialStore);
+    assert.notEqual(c3, defaultClient);
+    assert.ok(c3 instanceof PerfexClient);
+
+    cleanupTestFile();
 });
