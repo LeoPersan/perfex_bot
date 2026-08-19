@@ -84,6 +84,48 @@ describe('Serviço MCP Agente (OpenRouter + MCP)', () => {
     assert.equal(clientClosed, true);
   });
 
+  test('deve injetar o systemPrompt padronizado quando fornecido ou derivado da ação', async () => {
+    let capturedMessages: any[] = [];
+
+    const mockMcpClient = {
+      listTools: async () => ({ tools: [] }),
+      close: async () => {},
+    };
+
+    const mockOpenAIClient = {
+      chat: {
+        completions: {
+          create: async (params: any) => {
+            capturedMessages = [...params.messages];
+            return {
+              choices: [
+                {
+                  message: {
+                    role: 'assistant',
+                    content: '📁 **Projetos Encontrados (1)**',
+                  },
+                },
+              ],
+            };
+          },
+        },
+      },
+    };
+
+    const result = await askOpenRouterWithMcp('Listar meus projetos', {
+      action: 'listProjects',
+      mcpClient: mockMcpClient as any,
+      openaiClient: mockOpenAIClient as any,
+    });
+
+    assert.equal(result, '📁 **Projetos Encontrados (1)**');
+    assert.equal(capturedMessages.length, 2);
+    assert.equal(capturedMessages[0].role, 'system');
+    assert.match(capturedMessages[0].content, /AÇÃO: LISTAR PROJETOS/);
+    assert.equal(capturedMessages[1].role, 'user');
+    assert.equal(capturedMessages[1].content, 'Listar meus projetos');
+  });
+
   test('deve executar tool_call do MCP e retornar resposta agêntica consolidada', async () => {
     let callToolCount = 0;
     let clientClosed = false;

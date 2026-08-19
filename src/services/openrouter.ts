@@ -176,9 +176,86 @@ export async function selectFreeModel(
   return selector.selectModel(customFetch, requireToolCalling);
 }
 
+export interface AskOpenRouterOptions {
+  modelOverride?: string;
+  clientInstance?: OpenAI;
+  customFetch?: typeof fetch;
+  systemPrompt?: string;
+  action?: PerfexAction | string;
+}
+
+import { getSystemPrompt, PerfexAction } from '../config/prompts.js';
+
+function parseAskOptions(
+  optionsOrModelOverride?: string | AskOpenRouterOptions,
+  clientInstance?: OpenAI,
+  customFetch?: typeof fetch
+): AskOpenRouterOptions {
+  if (typeof optionsOrModelOverride === 'string') {
+    return { modelOverride: optionsOrModelOverride, clientInstance, customFetch };
+  }
+  return optionsOrModelOverride || {};
+}
+
+function buildOpenRouterMessages(prompt: string, opts: AskOpenRouterOptions): OpenAI.ChatCompletionMessageParam[] {
+  const messages: OpenAI.ChatCompletionMessageParam[] = [];
+  const systemPromptContent = opts.systemPrompt || (opts.action ? getSystemPrompt(opts.action) : getSystemPrompt());
+  if (systemPromptContent) {
+    messages.push({ role: 'system', content: systemPromptContent });
+  }
+  messages.push({ role: 'user', content: prompt });
+  return messages;
+}
+
+function sortModelsByIntelligence(models: OpenRouterModelInfo[]): void {
+  models.sort((a, b) => {
+    const scoreA = a.benchmarks?.artificial_analysis?.intelligence_index ?? 0;
+    const scoreB = b.benchmarks?.artificial_analysis?.intelligence_index ?? 0;
+    if (scoreA !== scoreB) return scoreB - scoreA;
+    return (b.context_length ?? 0) - (a.context_length ?? 0);
+  });
+}
+
+export async function getFreeCandidateModels(
+  strategy?: ModelSelectionStrategy,
+  customFetch?: typeof fetch,
+  requireToolCalling = false
+): Promise<string[]> {
+  const fallbackModel = config.openRouterModel;
+  const fetchImpl = customFetch || fetch;
+
+  try {
+    const selectedStrategy = strategy || config.modelSelectionStrategy;
+    const isFastest = selectedStrategy === 'fastest';
+    const url = isFastest
+      ? 'https://openrouter.ai/api/v1/models?sort=throughput-high-to-low'
+      : 'https://openrouter.ai/api/v1/models';
+
+    const response = await fetchImpl(url, { headers: { Accept: 'application/json' } });
+    if (!response.ok) return [fallbackModel];
+
+    const data = (await response.json()) as { data?: OpenRouterModelInfo[] };
+    const freeModels = filterFreeModels(data.data || [], requireToolCalling);
+    if (freeModels.length === 0) return [fallbackModel];
+
+    if (!isFastest) {
+      sortModelsByIntelligence(freeModels);
+    }
+
+    const candidates = freeModels.map((m) => m.id);
+    if (fallbackModel && !candidates.includes(fallbackModel)) {
+      candidates.push(fallbackModel);
+    }
+    return candidates;
+  } catch (error) {
+    console.error(`[OPENROUTER] Erro ao buscar lista de modelos candidatos:`, error);
+    return [fallbackModel];
+  }
+}
+
 export async function askOpenRouter(
   prompt: string,
-  modelOverride?: string,
+  optionsOrModelOverride?: string | AskOpenRouterOptions,
   clientInstance?: OpenAI,
   customFetch?: typeof fetch
 ): Promise<string> {
@@ -187,7 +264,9 @@ export async function askOpenRouter(
     throw new Error('OPENROUTER_API_KEY não foi configurada.');
   }
 
+  const opts = parseAskOptions(optionsOrModelOverride, clientInstance, customFetch);
   const client =
+    opts.clientInstance ||
     clientInstance ||
     new OpenAI({
       baseURL: 'https://openrouter.ai/api/v1',
@@ -198,23 +277,29 @@ export async function askOpenRouter(
       },
     });
 
-  const model = modelOverride || (await selectFreeModel(undefined, customFetch));
-  console.log(`[OPENROUTER] Enviando requisição para o modelo: ${model}`);
+  const candidates = opts.modelOverride
+    ? [opts.modelOverride]
+    : await getFreeCandidateModels(undefined, opts.customFetch || customFetch, false);
 
-  const response = await client.chat.completions.create({
-    model: model,
-    messages: [
-      {
-        role: 'user',
-        content: prompt,
-      },
-    ],
-  });
+  const messages = buildOpenRouterMessages(prompt, opts);
 
-  const content = response.choices?.[0]?.message?.content;
-  if (!content) {
-    throw new Error('Nenhuma resposta retornada do OpenRouter.');
+  let lastError: any = null;
+  for (let i = 0; i < candidates.length; i++) {
+    const model = candidates[i];
+    console.log(`[OPENROUTER] Tentativa ${i + 1}/${candidates.length} enviando para o modelo: ${model}`);
+
+    try {
+      const response = await client.chat.completions.create({ model, messages });
+      const content = response.choices?.[0]?.message?.content;
+      if (content) return content;
+      throw new Error('Nenhuma resposta retornada do OpenRouter.');
+    } catch (error: any) {
+      lastError = error;
+      clearModelCache();
+      console.warn(`[OPENROUTER] Modelo ${model} falhou com erro: ${error.message || error}. Tentando modelo alternativo...`);
+    }
   }
 
-  return content;
+  throw lastError || new Error('Nenhum modelo do OpenRouter respondeu com sucesso.');
 }
+

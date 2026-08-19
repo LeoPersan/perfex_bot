@@ -40,8 +40,8 @@ export function stripHtml(html: string | null | undefined): string {
 export function parseStaffId(html: string): string | null {
     if (!html) return null;
     const match = html.match(/name=["']staff_id["'][^>]*value=["'](\d+)["']/i) ||
-                  html.match(/value=["'](\d+)["'][^>]*name=["']staff_id["']/i) ||
-                  html.match(/staff_id[^>]*value=["'](\d+)["']/i);
+        html.match(/value=["'](\d+)["'][^>]*name=["']staff_id["']/i) ||
+        html.match(/staff_id[^>]*value=["'](\d+)["']/i);
     return match ? match[1] : null;
 }
 
@@ -49,6 +49,122 @@ export function extractLinkTextOrStrip(html: string): string {
     if (!html) return '';
     const match = html.match(/<a[^>]*>([^<]+)<\/a>/);
     return match ? match[1].trim() : stripHtml(html);
+}
+
+function parseProgressVal(raw: string | number | undefined | null): string | null {
+    if (raw === undefined || raw === null) return null;
+    const str = String(raw).replace('%', '').trim();
+    if (!str) return null;
+    const num = parseFloat(str);
+    if (isNaN(num)) return null;
+    if (num > 0 && num <= 1) {
+        return `${Math.round(num * 100)}%`;
+    }
+    return `${Math.round(num)}%`;
+}
+
+function extractProgressFromContainer($: cheerio.CheerioAPI): string | null {
+    const el = $('.project-progress, .progress-bar, .project-overview-progress, [data-percent], [data-value]').first();
+    console.error(`[PERFEX_PARSER] Contêiner de progresso (encontrado: ${el.length > 0}): class="${el.attr('class') || ''}", tag="${el.prop('tagName') || ''}"`);
+
+    if (el.length === 0) return null;
+
+    const dataVal = el.attr('data-value');
+    console.error(`[PERFEX_PARSER] Cheerio data-value: "${dataVal}"`);
+    if (dataVal !== undefined) {
+        const p = parseProgressVal(dataVal);
+        if (p !== null) {
+            console.error(`[PERFEX_PARSER] Progresso extraído via Cheerio data-value: "${p}"`);
+            return p;
+        }
+    }
+
+    const dataPercent = el.attr('data-percent');
+    console.error(`[PERFEX_PARSER] Cheerio data-percent: "${dataPercent}"`);
+    if (dataPercent !== undefined) {
+        const p = parseProgressVal(dataPercent);
+        if (p !== null) {
+            console.error(`[PERFEX_PARSER] Progresso extraído via Cheerio data-percent: "${p}"`);
+            return p;
+        }
+    }
+
+    const ariaVal = el.attr('aria-valuenow');
+    console.error(`[PERFEX_PARSER] Cheerio aria-valuenow: "${ariaVal}"`);
+    if (ariaVal !== undefined) {
+        const p = parseProgressVal(ariaVal);
+        if (p !== null) {
+            console.error(`[PERFEX_PARSER] Progresso extraído via Cheerio aria-valuenow: "${p}"`);
+            return p;
+        }
+    }
+
+    const styleAttr = el.attr('style') || '';
+    console.error(`[PERFEX_PARSER] Cheerio style: "${styleAttr}"`);
+    const styleMatch = styleAttr.match(/width:\s*(\d+(?:\.\d+)?)%/i);
+    if (styleMatch) {
+        const p = parseProgressVal(styleMatch[1]);
+        if (p !== null) {
+            console.error(`[PERFEX_PARSER] Progresso extraído via Cheerio style: "${p}"`);
+            return p;
+        }
+    }
+
+    const textMatch = el.text().trim().match(/(\d+(?:\.\d+)?)\s*%/);
+    console.error(`[PERFEX_PARSER] Cheerio text: "${el.text().trim()}"`);
+    if (textMatch) {
+        const p = parseProgressVal(textMatch[1]);
+        if (p !== null) {
+            console.error(`[PERFEX_PARSER] Progresso extraído via Cheerio text: "${p}"`);
+            return p;
+        }
+    }
+
+    return null;
+}
+
+function extractProgressFromHtmlRegex(html: string): string | null {
+    const regexes = [
+        { name: 'project-progress data-value', regex: /class=["'][^"']*project-progress[^"']*["'][^>]*data-value=["']?(\d+(?:\.\d+)?)%?["']/i },
+        { name: 'data-value project-progress', regex: /data-value=["']?(\d+(?:\.\d+)?)%?["'][^>]*class=["'][^"']*project-progress/i },
+        { name: 'data-value global', regex: /data-value=["']?(\d+(?:\.\d+)?)%?["']/i },
+        { name: 'project-progress data-percent', regex: /class=["'][^"']*project-progress[^"']*["'][^>]*data-percent=["']?(\d+(?:\.\d+)?)%?["']/i },
+        { name: 'data-percent global', regex: /data-percent=["']?(\d+(?:\.\d+)?)%?["']/i },
+        { name: 'circleProgress JS', regex: /circleProgress\(\s*\{[^}]*value:\s*(\d+(?:\.\d+)?)/i },
+        { name: 'progress-bar aria-valuenow', regex: /class=["'][^"']*progress-bar[^"']*["'][^>]*aria-valuenow=["']?(\d+(?:\.\d+)?)["']/i },
+        { name: 'progress-bar style width', regex: /class=["'][^"']*progress-bar[^"']*["'][^>]*style=["'][^"']*width:\s*(\d+(?:\.\d+)?)%/i },
+    ];
+
+    for (const item of regexes) {
+        const match = html.match(item.regex);
+        if (match?.[1]) {
+            const p = parseProgressVal(match[1]);
+            if (p !== null) {
+                console.error(`[PERFEX_PARSER] Progresso extraído via regex (${item.name}): "${p}" (valor bruto: "${match[1]}")`);
+                return p;
+            }
+        }
+    }
+
+    return null;
+}
+
+export function extractProjectProgressPercentage($: cheerio.CheerioAPI, html: string): string {
+    console.error(`[PERFEX_PARSER] Iniciando extração do progresso do projeto (tamanho do HTML: ${html.length} bytes)`);
+    const containerResult = extractProgressFromContainer($);
+    if (containerResult) {
+        console.error(`[PERFEX_PARSER] Resultado final da extração via contêiner: ${containerResult}`);
+        return containerResult;
+    }
+
+    const regexResult = extractProgressFromHtmlRegex(html);
+    if (regexResult) {
+        console.error(`[PERFEX_PARSER] Resultado final da extração via regex HTML: ${regexResult}`);
+        return regexResult;
+    }
+
+    console.error(`[PERFEX_PARSER] Nenhum progresso encontrado no HTML do projeto. Retornando fallback 0%`);
+    return '0%';
 }
 
 function parseProjectRow(row: Record<string, string>): PerfexProject | null {
@@ -66,7 +182,11 @@ function parseProjectRow(row: Record<string, string>): PerfexProject | null {
     const statusId = statusIdMatch ? statusIdMatch[1] : "2";
     const status = stripHtml(statusHtml) || "Em Progresso";
 
-    return { id, name, client, startDate, deadline, statusId, status };
+    const rowStr = JSON.stringify(row);
+    const progressMatch = rowStr.match(/data-value=["']?(\d+(?:\.\d+)?)%?["']/i);
+    const progressPercentage = progressMatch ? (parseProgressVal(progressMatch[1]) || undefined) : undefined;
+
+    return { id, name, client, startDate, deadline, statusId, status, progressPercentage };
 }
 
 export function parseProjectsDataTable(projectsJson: any): PerfexProject[] {
@@ -107,17 +227,17 @@ export function parseProjectDetailsHtml(html: string, projectId: string): Perfex
         deadline: '',
         description: htmlToMarkdown(descriptionHtml),
         members: Array.from(membersSet),
-        progressPercentage: $('.progress-bar').first().text().trim() || '0%'
+        progressPercentage: extractProjectProgressPercentage($, html)
     };
 }
 
 export function extractTaskTimerInfo(row: any, titleHtml: string): { isTimerActive: boolean; activeTimerId: string | null } {
     const rowStr = JSON.stringify(row);
     const isTimerActive = titleHtml.includes('fa-clock-o') ||
-                          titleHtml.includes('tasks-table-stop-timer') ||
-                          rowStr.includes('tasks-table-stop-timer') ||
-                          rowStr.includes('stop-timer') ||
-                          /timer_action\([^,]+,\s*\d+,\s*\d+\)/.test(rowStr);
+        titleHtml.includes('tasks-table-stop-timer') ||
+        rowStr.includes('tasks-table-stop-timer') ||
+        rowStr.includes('stop-timer') ||
+        /timer_action\([^,]+,\s*\d+,\s*\d+\)/.test(rowStr);
     let activeTimerId: string | null = null;
     if (isTimerActive) {
         const timerIdMatch = rowStr.match(/timer_action\([^,]+,\s*\d+,\s*(\d+)\)/) || titleHtml.match(/timer_action\([^,]+,\s*\d+,\s*(\d+)\)/);

@@ -12,6 +12,7 @@ export interface PerfexProject {
     deadline: string;
     statusId: string;
     status: string;
+    progressPercentage?: string;
 }
 
 export interface PerfexProjectDetails extends PerfexProject {

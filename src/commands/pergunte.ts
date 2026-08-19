@@ -67,8 +67,15 @@ export function createPergunteCommand(credentialStore: CredentialStore = default
           }
         }
       } catch (error: any) {
+        const rawMessage = String(error?.message || error || 'Erro desconhecido.');
+        let userErrorMessage = `❌ Erro ao consultar a IA: ${rawMessage}`;
+
+        if (rawMessage.includes('503') || rawMessage.includes('Provider returned error')) {
+          userErrorMessage = `⚠️ **Serviço de IA Temporariamente Indisponível (Erro 503)**\nOs provedores de modelos gratuitos no OpenRouter estão sobrecarregados no momento. Por favor, aguarde alguns segundos e tente a pergunta novamente.`;
+        }
+
         await interaction.editReply({
-          content: `❌ Erro ao consultar a IA: ${error.message || 'Erro desconhecido.'}`,
+          content: userErrorMessage,
         });
       }
     },

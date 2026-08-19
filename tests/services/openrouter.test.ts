@@ -42,11 +42,12 @@ describe('Serviço OpenRouter', () => {
         completions: {
           create: async (params: { model: string; messages: Array<{ role: string; content: string }> }) => {
             usedModel = params.model;
+            const userMsg = params.messages.find((m) => m.role === 'user');
             return {
               choices: [
                 {
                   message: {
-                    content: `Resposta simulada para a pergunta: ${params.messages[0].content}`,
+                    content: `Resposta simulada para a pergunta: ${userMsg?.content}`,
                   },
                 },
               ],
@@ -70,10 +71,94 @@ describe('Serviço OpenRouter', () => {
     });
 
     const prompt = 'Qual a capital do Brasil?';
-    const result = await askOpenRouter(prompt, undefined, mockOpenAIClient as any, mockFetch as any);
+    const result = await askOpenRouter('Qual seu nome?', undefined, mockOpenAIClient as any, mockFetch as any);
 
-    assert.equal(result, 'Resposta simulada para a pergunta: Qual a capital do Brasil?');
+    assert.equal(result, 'Resposta simulada para a pergunta: Qual seu nome?');
     assert.equal(usedModel, 'top-smart-model:free');
+  });
+
+  test('deve incluir o systemPrompt nas mensagens enviadas ao cliente OpenAI ao usar o formato de opções', async () => {
+    let sentMessages: any[] = [];
+    const mockOpenAIClient = {
+      chat: {
+        completions: {
+          create: async (params: { model: string; messages: Array<{ role: string; content: string }> }) => {
+            sentMessages = params.messages;
+            return {
+              choices: [
+                {
+                  message: {
+                    content: 'Resposta com system prompt.',
+                  },
+                },
+              ],
+            };
+          },
+        },
+      },
+    };
+
+    const mockFetch = async () => ({
+      ok: true,
+      json: async () => ({
+        data: [
+          {
+            id: 'top-smart-model:free',
+            pricing: { prompt: '0', completion: '0' },
+          },
+        ],
+      }),
+    });
+
+    const result = await askOpenRouter('Atualizar tarefa', {
+      action: 'updateStatus',
+      clientInstance: mockOpenAIClient as any,
+      customFetch: mockFetch as any,
+    });
+
+    assert.equal(result, 'Resposta com system prompt.');
+    assert.equal(sentMessages.length, 2);
+    assert.equal(sentMessages[0].role, 'system');
+    assert.match(sentMessages[0].content, /ATUALIZAR STATUS DE TAREFA/);
+    assert.equal(sentMessages[1].role, 'user');
+    assert.equal(sentMessages[1].content, 'Atualizar tarefa');
+  });
+
+  test('deve tentar o próximo modelo candidato se o primeiro modelo falhar com erro 503', async () => {
+    const attemptedModels: string[] = [];
+    const mockOpenAIClient = {
+      chat: {
+        completions: {
+          create: async (params: { model: string }) => {
+            attemptedModels.push(params.model);
+            if (params.model === 'broken-model:free') {
+              throw new Error('503 Provider returned error');
+            }
+            return {
+              choices: [{ message: { content: 'Sucesso no modelo reserva!' } }],
+            };
+          },
+        },
+      },
+    };
+
+    const mockFetch = async () => ({
+      ok: true,
+      json: async () => ({
+        data: [
+          { id: 'broken-model:free', pricing: { prompt: '0', completion: '0' } },
+          { id: 'working-backup-model:free', pricing: { prompt: '0', completion: '0' } },
+        ],
+      }),
+    });
+
+    const result = await askOpenRouter('Olá', {
+      clientInstance: mockOpenAIClient as any,
+      customFetch: mockFetch as any,
+    });
+
+    assert.equal(result, 'Sucesso no modelo reserva!');
+    assert.deepEqual(attemptedModels, ['broken-model:free', 'working-backup-model:free']);
   });
 
   test('deve escolher o modelo gratuito mais inteligente com base no intelligence_index', async () => {

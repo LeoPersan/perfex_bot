@@ -76,13 +76,16 @@ export function createPerfexMcpServer(perfexClient?: PerfexClient, credentialSto
 
     server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const { name, arguments: args } = request.params;
+        console.error(`[MCP_SERVER] Executando ferramenta: ${name} com args:`, JSON.stringify(args));
         try {
             const activeClient = resolveClientForArgs(defaultClient, args, credentialStore);
             const resultData = await handleToolCall(activeClient, name, args);
+            console.error(`[MCP_SERVER] Resultado da ferramenta ${name}:`, JSON.stringify(resultData).slice(0, 300));
             return {
                 content: [{ type: 'text', text: JSON.stringify(resultData, null, 2) }]
             };
         } catch (error: any) {
+            console.error(`[MCP_SERVER] Erro na ferramenta ${name}:`, error.message);
             return {
                 content: [{ type: 'text', text: `Erro ao executar a ferramenta ${name}: ${error.message}` }],
                 isError: true

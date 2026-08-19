@@ -55,6 +55,7 @@ test('parseProjectDetailsHtml extracts structured project details', () => {
             <p>Prazo: 31/12/2026</p>
         </div>
         <div class="tc-content"><p>Descrição detalhada do projeto em <strong>HTML</strong>.</p></div>
+        <div class="project-progress" data-value="58"></div>
         <a href="https://perfex.example.com/admin/profile/14">Leonardo Persan</a>
     `;
     const details = parseProjectDetailsHtml(html, '100');
@@ -62,6 +63,7 @@ test('parseProjectDetailsHtml extracts structured project details', () => {
     assert.equal(details.name, 'Projeto Teste MCP');
     assert.equal(details.client, 'Cliente ABC');
     assert.equal(details.statusId, '2');
+    assert.equal(details.progressPercentage, '58%');
     assert.ok(details.description.includes('**HTML**'));
     assert.ok(details.members.includes('Leonardo Persan'));
 });

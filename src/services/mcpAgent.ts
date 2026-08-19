@@ -2,7 +2,9 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import OpenAI from 'openai';
 import { config } from '../config/env.js';
-import { selectFreeModel } from './openrouter.js';
+import { selectFreeModel, getFreeCandidateModels, clearModelCache } from './openrouter.js';
+
+import { getSystemPrompt, PerfexAction } from '../config/prompts.js';
 
 export interface McpAgentOptions {
   modelOverride?: string;
@@ -11,6 +13,8 @@ export interface McpAgentOptions {
   openaiClient?: OpenAI;
   customFetch?: typeof fetch;
   userId?: string;
+  systemPrompt?: string;
+  action?: PerfexAction | string;
 }
 
 import path from 'path';
@@ -21,9 +25,11 @@ export async function createDefaultMcpClient(): Promise<Client> {
   const tsServerPath = path.resolve(process.cwd(), 'src/mcp/server.ts');
   const tsxBin = path.resolve(process.cwd(), 'node_modules/.bin/tsx');
 
-  const useJs = fs.existsSync(jsServerPath);
-  const command = useJs ? process.execPath : tsxBin;
-  const args = useJs ? [jsServerPath] : [tsServerPath];
+  const isDev = process.env.NODE_ENV !== 'production';
+  const hasTs = fs.existsSync(tsServerPath);
+  const useJs = !isDev && fs.existsSync(jsServerPath);
+  const command = useJs ? process.execPath : (hasTs ? tsxBin : process.execPath);
+  const args = useJs ? [jsServerPath] : (hasTs ? [tsServerPath] : [jsServerPath]);
 
   const transport = new StdioClientTransport({
     command,
@@ -165,18 +171,42 @@ export async function askOpenRouterWithMcp(
     const { tools: mcpTools } = await mcpClient.listTools();
     const openAITools = mapMcpToolsToOpenAI(mcpTools);
     const openai = getOpenAIClient(apiKey, options?.openaiClient);
-    const model = options?.modelOverride || (await selectFreeModel(undefined, options?.customFetch, true));
-    const messages: OpenAI.ChatCompletionMessageParam[] = [{ role: 'user', content: userPrompt }];
+    const candidates = options?.modelOverride
+      ? [options.modelOverride]
+      : await getFreeCandidateModels(undefined, options?.customFetch, true);
 
-    return await runAgentLoop({
-      openai,
-      mcpClient,
-      model,
-      messages,
-      openAITools,
-      maxIterations: options?.maxIterations ?? 10,
-      userId: options?.userId,
-    });
+    let lastError: any = null;
+    for (let i = 0; i < candidates.length; i++) {
+      const model = candidates[i];
+      console.log(`[OPENROUTER] Agente MCP tentativa ${i + 1}/${candidates.length} utilizando modelo: ${model}`);
+
+      try {
+        const messages: OpenAI.ChatCompletionMessageParam[] = [];
+        const systemPromptContent =
+          options?.systemPrompt ||
+          (options?.action ? getSystemPrompt(options.action) : getSystemPrompt());
+        if (systemPromptContent) {
+          messages.push({ role: 'system', content: systemPromptContent });
+        }
+        messages.push({ role: 'user', content: userPrompt });
+
+        return await runAgentLoop({
+          openai,
+          mcpClient,
+          model,
+          messages,
+          openAITools,
+          maxIterations: options?.maxIterations ?? 10,
+          userId: options?.userId,
+        });
+      } catch (err: any) {
+        lastError = err;
+        clearModelCache();
+        console.warn(`[OPENROUTER] Agente MCP com modelo ${model} falhou com erro: ${err.message || err}. Tentando modelo alternativo...`);
+      }
+    }
+
+    throw lastError || new Error('Nenhum modelo do OpenRouter com suporte a ferramentas respondeu com sucesso.');
 
   } finally {
     if (shouldCloseClient && mcpClient) {
