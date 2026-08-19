@@ -130,3 +130,17 @@ test('PerfexClient.updateTaskStatus updates task status', async () => {
     assert.equal(result.success, true);
     assert.equal(result.message, 'Status alterado para Completo');
 });
+
+test('PerfexClient defaults to generic fallback URL when env and config are missing', () => {
+    const originalEnv = process.env.PERFEX_BASE_URL;
+    delete process.env.PERFEX_BASE_URL;
+    try {
+        const client = new PerfexClient();
+        assert.equal((client as any).config.baseUrl, 'https://seu-perfex-crm.com');
+    } finally {
+        if (originalEnv !== undefined) {
+            process.env.PERFEX_BASE_URL = originalEnv;
+        }
+    }
+});
+
